@@ -3,7 +3,6 @@ import os
 from collections import defaultdict
 from typing import Optional, List, Dict
 
-import PIL
 import nltk
 import numpy as np
 import torch
@@ -49,15 +48,9 @@ class DataLoaderWrapper:
         self.dataset_for_testing = CoCoDataSetForTesting(
             transform=transform,
             batch_size=1,  # This is fixed for testing
-            vocab_threshold=vocab_threshold,
-            vocab_file=vocab_file,
-            start_word=start_word,
-            end_word=end_word,
-            unk_word=unk_word,
             annotations_file=os.path.join(
                 cocoapi_loc, "cocoapi/annotations/image_info_test2014.json"
             ),
-            vocab_from_file=vocab_from_file,
             img_folder=os.path.join(cocoapi_loc, "cocoapi/images/test2014/"),
         )
 
@@ -113,10 +106,9 @@ class CoCoDataSetForTraining(data.Dataset):
 
         print("Preparing data")
         self.coco = COCO(annotations_file)
-        self.annotation_indices: List[int] = list(self.coco.anns.keys())[:1000]
-        self.image_by_annotation_index: Dict[int, PIL.Image] = {}
+        self.annotation_indices: List[int] = list(self.coco.anns.keys())  # [:10000]
         self.caption_lengths: List[int] = []
-        self.caption_tokens_by_annotation_index: Dict[int, torch.LongTensor] = {}
+        self.caption_token_ids_by_annotation_index: Dict[int, torch.LongTensor] = {}
         self.annotation_indices_by_caption_length: Dict[int, List[int]] = defaultdict(
             list
         )
@@ -124,32 +116,24 @@ class CoCoDataSetForTraining(data.Dataset):
         for idx in tqdm(np.arange(len(self.annotation_indices))):
             annotation_index = self.annotation_indices[idx]
 
-            # Caption handling: load caption, apply nltk, and then convert them to tokens
+            # Caption handling: load caption, apply nltk, and then convert them to token_ids
             caption = self.coco.anns[annotation_index]["caption"]
             caption_words = nltk.tokenize.word_tokenize(str(caption).lower())
-            caption_tokens = [self.vocab(self.vocab.start_word)]
-            caption_tokens.extend(
+            caption_token_ids = [self.vocab(self.vocab.start_word)]
+            caption_token_ids.extend(
                 [self.vocab(caption_word) for caption_word in caption_words]
             )
-            caption_tokens.append(self.vocab(self.vocab.end_word))
-            self.caption_lengths.append(len(caption_tokens))
-            self.annotation_indices_by_caption_length[len(caption_tokens)].append(
+            caption_token_ids.append(self.vocab(self.vocab.end_word))
+            self.caption_lengths.append(len(caption_token_ids))
+            self.annotation_indices_by_caption_length[len(caption_token_ids)].append(
                 annotation_index
             )
-            self.caption_tokens_by_annotation_index[annotation_index] = torch.Tensor(
-                caption_tokens
+            self.caption_token_ids_by_annotation_index[annotation_index] = torch.Tensor(
+                caption_token_ids
             ).type(torch.LongTensor)
-
-            # Image handling: load image and convert image to tensor and pre-process using transform
-            image_id = self.coco.anns[self.annotation_indices[idx]]["image_id"]
-            image_path = self.coco.loadImgs(image_id)[0]["file_name"]
-            image = Image.open(os.path.join(self.img_folder, image_path)).convert("RGB")
-            image = self.transform(image)
-            self.image_by_annotation_index[annotation_index] = image
 
     def get_train_indices(self):
         sampled_caption_length = np.random.choice(self.caption_lengths)
-        print(f"\nSampled caption length: {sampled_caption_length}", flush=True)
         return list(
             np.random.choice(
                 self.annotation_indices_by_caption_length[sampled_caption_length],
@@ -158,10 +142,15 @@ class CoCoDataSetForTraining(data.Dataset):
         )
 
     def __getitem__(self, annotation_index):
-        # obtain image and caption if in training mode
+        # Image handling: load image and convert image to tensor and pre-process using transform
+        # Unfortunately, it is impossible to pre-catch all the images in memory, so we need to load them at runtime.
+        image_id = self.coco.anns[annotation_index]["image_id"]
+        image_path = self.coco.loadImgs(image_id)[0]["file_name"]
+        pil_image = Image.open(os.path.join(self.img_folder, image_path)).convert("RGB")
+        transformed_image = self.transform(pil_image)
         return (
-            self.image_by_annotation_index[annotation_index],
-            self.caption_tokens_by_annotation_index[annotation_index],
+            transformed_image,
+            self.caption_token_ids_by_annotation_index[annotation_index],
         )
 
     def __len__(self):
@@ -170,30 +159,10 @@ class CoCoDataSetForTraining(data.Dataset):
 
 class CoCoDataSetForTesting(data.Dataset):
     def __init__(
-        self,
-        transform,
-        batch_size: int,
-        vocab_threshold: int,
-        vocab_from_file: bool,
-        vocab_file: str,
-        start_word: str,
-        end_word: str,
-        unk_word: str,
-        annotations_file: str,
-        img_folder: str,
+        self, transform, batch_size: int, annotations_file: str, img_folder: str,
     ):
         self.transform = transform
         self.batch_size = batch_size
-        # TODO: remove vocab from testing, since it is not used
-        self.vocab = Vocabulary(
-            vocab_threshold,
-            vocab_from_file,
-            vocab_file,
-            start_word,
-            end_word,
-            unk_word,
-            annotations_file,
-        )
         self.img_folder = img_folder
 
         # TODO: optimize this as the training one
@@ -202,14 +171,10 @@ class CoCoDataSetForTesting(data.Dataset):
 
     def __getitem__(self, index):
         path = self.paths[index]
-
-        # Convert image to tensor and pre-process using transform
         pil_image = Image.open(os.path.join(self.img_folder, path)).convert("RGB")
-        original_image = np.array(pil_image)
-        image = self.transform(pil_image)
-
-        # return original image and pre-processed image tensor
-        return original_image, image
+        transformed_image = self.transform(pil_image)
+        # Batch must contain tensors, numpy arrays, numbers, dicts or lists; <class 'PIL.Image.Image'> is not allowed.
+        return np.array(pil_image), transformed_image
 
     def __len__(self):
         return len(self.paths)

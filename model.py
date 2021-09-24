@@ -43,7 +43,7 @@ class DecoderRNN(nn.Module):
         device = features.get_device()
 
         # ignore the last caption, which is <END>
-        inputs = torch.cat(
+        list_of_inputs = torch.cat(
             (
                 features.view(-1, 1, self.embed_size),
                 self.word_embeddings(captions[:, :-1]),
@@ -52,13 +52,37 @@ class DecoderRNN(nn.Module):
         )
         # print(inputs.shape)
 
-        h0 = torch.randn(self.num_layers, inputs.shape[1], self.hidden_size).to(device)
-        c0 = torch.randn(self.num_layers, inputs.shape[1], self.hidden_size).to(device)
-        outputs, hidden = self.lstm(inputs, (h0, c0))
+        hidden = (
+            torch.randn(self.num_layers, list_of_inputs.shape[1], self.hidden_size).to(
+                device
+            ),
+            torch.randn(self.num_layers, list_of_inputs.shape[1], self.hidden_size).to(
+                device
+            ),
+        )
+        outputs, hidden = self.lstm(list_of_inputs, hidden)
         # print(outputs.shape)
 
         return self.fc(outputs)
 
-    def sample(self, inputs, states=None, max_len=20):
-        " accepts pre-processed image tensor (inputs) and returns predicted sentence (list of tensor ids of length max_len) "
-        pass
+    def sample(self, features, states=None, max_len=20):
+        """
+        accepts pre-processed image tensor (inputs) and returns predicted sentence (list of tensor ids of length max_len)
+        """
+        device = features.get_device()
+
+        inputs = features
+        hidden = states or (
+            torch.randn(self.num_layers, inputs.shape[1], self.hidden_size).to(device),
+            torch.randn(self.num_layers, inputs.shape[1], self.hidden_size).to(device),
+        )
+
+        token_ids_with_max_probability = []
+        for _ in range(max_len):
+            outputs, hidden = self.lstm(inputs, hidden)
+            outputs = self.fc(outputs)
+            token_id = outputs.argmax()
+            token_ids_with_max_probability.append(token_id.cpu().detach().tolist())
+            inputs = self.word_embeddings(token_id).view(1, 1, -1)
+
+        return token_ids_with_max_probability
