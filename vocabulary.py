@@ -64,7 +64,7 @@ class Vocabulary(object):
         """Add a token to the vocabulary."""
         if word not in self.word2idx:
             self.word2idx[word] = self.word_idx
-            self.idx2word[self.word2idx] = word
+            self.idx2word[self.word_idx] = word
             self.word_idx += 1
 
     def add_captions(self):
@@ -73,12 +73,12 @@ class Vocabulary(object):
         counter = Counter()
         annotation_indices = coco.anns.keys()
         for idx, annotation_index in enumerate(annotation_indices):
-            caption = str(coco.anns[idx]["caption"])
+            caption = str(coco.anns[annotation_index]["caption"])
             tokens = nltk.tokenize.word_tokenize(caption.lower())
             counter.update(tokens)
 
             if idx % 100000 == 0:
-                print("[%d/%d] Tokenizing captions..." % (idx, len(annotation_index)))
+                print("[%d/%d] Tokenizing captions..." % (idx, len(annotation_indices)))
 
         words = [word for word, cnt in counter.items() if cnt >= self.vocab_threshold]
 
