@@ -7,3 +7,4 @@ data/
 images/
 models/
 *.pkl
+training_log.txt
