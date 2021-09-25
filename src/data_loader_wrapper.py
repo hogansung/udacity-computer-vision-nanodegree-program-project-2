@@ -106,7 +106,7 @@ class CoCoDataSetForTraining(data.Dataset):
 
         print("Preparing data")
         self.coco = COCO(annotations_file)
-        self.annotation_indices: List[int] = list(self.coco.anns.keys())  # [:10000]
+        self.annotation_indices: List[int] = list(self.coco.anns.keys())[:10]
         self.caption_lengths: List[int] = []
         self.caption_token_ids_by_annotation_index: Dict[int, torch.LongTensor] = {}
         self.annotation_indices_by_caption_length: Dict[int, List[int]] = defaultdict(

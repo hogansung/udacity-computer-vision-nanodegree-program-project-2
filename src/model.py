@@ -40,49 +40,44 @@ class DecoderRNN(nn.Module):
         assert (
             features.shape[0] == captions.shape[0]
         ), "Batch sizes are different for features and captions."
-        device = features.get_device()
 
         # ignore the last caption, which is <END>
-        list_of_inputs = torch.cat(
-            (
-                features.view(-1, 1, self.embed_size),
-                self.word_embeddings(captions[:, :-1]),
-            ),
-            dim=1,
-        )
-        # print(inputs.shape)
+        embeddings = self.word_embeddings(captions[:, :-1])
+        list_of_inputs = torch.cat((features.unsqueeze(1), embeddings), dim=1)
+        list_of_outputs, _ = self.lstm(list_of_inputs, None)
+        return self.fc(list_of_outputs)
 
-        hidden = (
-            torch.randn(self.num_layers, list_of_inputs.shape[1], self.hidden_size).to(
-                device
-            ),
-            torch.randn(self.num_layers, list_of_inputs.shape[1], self.hidden_size).to(
-                device
-            ),
-        )
-        outputs, hidden = self.lstm(list_of_inputs, hidden)
-        # print(outputs.shape)
-
-        return self.fc(outputs)
+    # def sample(self, inputs, states=None, max_len=20):
+    #     " accepts pre-processed image tensor (inputs) and returns predicted sentence (list of tensor ids of length max_len) "
+    #     # We define the list of words to be collected.
+    #     words = []
+    #     # We iterate max_len number of times.
+    #     for i in range(max_len):
+    #         # We pass the inputs and states to the RNN. And we obtain its output and the new states.
+    #         rnn_output, states = self.lstm(inputs, states)
+    #         # Its output is passed through the linear layer to obtain the scores.
+    #         scores = self.fc(rnn_output)
+    #         # We get the most likely word and its probability, from the scores.
+    #         prob, word = scores.max(2)
+    #         # We collect the most likely word into our list of words.
+    #         words.append(word.item())
+    #         # The next input will be the embedding of the most likely word, to close the RNN loop.
+    #         inputs = self.word_embeddings(word)
+    #     # We return the list of words.
+    #     return words
 
     def sample(self, features, states=None, max_len=20):
         """
         accepts pre-processed image tensor (inputs) and returns predicted sentence (list of tensor ids of length max_len)
         """
-        device = features.get_device()
-
         inputs = features
-        hidden = states or (
-            torch.randn(self.num_layers, inputs.shape[1], self.hidden_size).to(device),
-            torch.randn(self.num_layers, inputs.shape[1], self.hidden_size).to(device),
-        )
 
-        token_ids_with_max_probability = []
+        token_ids = []
         for _ in range(max_len):
-            outputs, hidden = self.lstm(inputs, hidden)
+            outputs, states = self.lstm(inputs, states)
             outputs = self.fc(outputs)
-            token_id = outputs.argmax()
-            token_ids_with_max_probability.append(token_id.cpu().detach().tolist())
-            inputs = self.word_embeddings(token_id).view(1, 1, -1)
+            _, token_id = outputs.max(2)
+            token_ids.append(token_id.item())
+            inputs = self.word_embeddings(token_id)
 
-        return token_ids_with_max_probability
+        return token_ids
