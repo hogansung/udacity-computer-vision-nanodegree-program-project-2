@@ -8,17 +8,14 @@ sys.path.append("/opt/cocoapi/PythonAPI")
 from data_loader_wrapper import DataLoaderWrapper
 from model import EncoderCNN, DecoderRNN
 import math
-import nltk
-
-nltk.download("punkt")
 
 ## TODO #1: Select appropriate values for the Python variables below.
 batch_size = 64
 vocab_threshold = 5
 vocab_from_file = True
-embed_size = 64  # 512
-hidden_size = 64  # 512
-num_epochs = 100  # number of training epochs
+embed_size = 512  # 512
+hidden_size = 512  # 512
+num_epochs = 1000  # number of training epochs
 save_every = 1  # determines frequency of saving model weights
 print_every = 100  # determines window for printing average loss
 log_file = "training_log.txt"  # name of file with saved training loss and perplexity
@@ -68,7 +65,7 @@ criterion = nn.CrossEntropyLoss()  # overwrite it with cpu
 params = list(encoder.embed.parameters()) + list(decoder.parameters())
 
 # TODO #4: Define the optimizer.
-optimizer = torch.optim.Adam(params, lr=0.01)
+optimizer = torch.optim.Adam(params, lr=0.001)
 
 # Set the total number of training steps per epoch.
 total_step = math.ceil(
@@ -164,15 +161,6 @@ for epoch in range(1, num_epochs + 1):
         if i_step % print_every == 0:
             print("\r" + stats)
 
-    # Save the weights.
-    if epoch % save_every == 0:
-        print(len(encoder.state_dict().keys()))
-        torch.save(
-            decoder.state_dict(), os.path.join("./models", "decoder-%d.pkl" % epoch)
-        )
-        torch.save(
-            encoder.state_dict(), os.path.join("./models", "encoder-%d.pkl" % epoch)
-        )
 
 # Close the training log file.
 f.close()
